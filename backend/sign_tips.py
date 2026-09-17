@@ -1,0 +1,35 @@
+# sign_tips.py
+# WLASL Gesture Instructional Descriptions for Correction Feedback
+
+SIGN_TIPS = {
+    "hello": "Extend your hand, fingers together, palm down, and move it outward from your forehead in a saluting motion.",
+    "help": "Place your closed dominant hand (fist with thumb up) on top of your flat open non-dominant hand palm, then raise both hands together.",
+    "need": "Bend your dominant index finger into a hook shape pointing downward, and tap it downwards at the wrist once or twice.",
+    "want": "Extend both hands forward, palms facing up, fingers slightly curved like claws, and pull them back toward your chest.",
+    "please": "Place your flat dominant hand on your chest and move it in a circular motion clockwise a few times.",
+    "thank you": "Touch the fingertips of your flat dominant hand to your lips or chin, then move your hand outward and down toward the viewer.",
+    "yes": "Make a fist with your dominant hand and tilt it up and down at the wrist, mimicking a nodding head.",
+    "no": "Extend your index and middle fingers together, then snap them down against your thumb twice quickly.",
+    "go": "Point both index fingers forward, and rotate them outward away from your body in small rolling circles.",
+    "school": "Clap your flat hands together twice horizontally, with the dominant hand perpendicular to the bottom hand.",
+    "eat": "Bring your dominant hand to your mouth twice, fingers together and tips touching the thumb (flat-O shape).",
+    "drink": "Form a 'C' shape with your dominant hand and tip it toward your mouth as if drinking from a cup.",
+    "computer": "Form a 'C' shape with your dominant hand and move it in a circle along your non-dominant arm or wrist.",
+    "book": "Clasp your palms together in front of you, then open them out like a book hinge, keeping pinkies touching.",
+    "chair": "Extend your index and middle fingers on both hands. Tap the fingers of your dominant hand on top of the non-dominant ones twice.",
+    "table": "Place both forearms flat in front of you, one resting on top of the other parallel to your chest.",
+    "apple": "Press the knuckle of your bent index finger into your cheek and twist it back and forth twice.",
+    "orange": "Place your hand near your chin, squeeze it into a fist, and release twice (mimicking squeezing an orange).",
+    "family": "Form 'F' shapes with both hands (thumb and index touching, others up). Circle them around starting with thumbs touching and ending with pinkies touching.",
+    "dog": "Pat your thigh once, then snap your fingers twice as if calling a dog.",
+    "cat": "Pinch your thumb and index finger together near your cheek and pull outward, mimicking whiskers.",
+    "water": "Form a 'W' shape with your index, middle, and ring fingers and tap your index finger against your chin twice.",
+    "deaf": "Touch your index finger to your ear, then touch it to your mouth or chin.",
+    "hearing": "Place your index finger horizontally under your lip and roll it forward in small circular movements.",
+    "accident": "Bring two closed fists together so their knuckles crash or tap into each other in front of your chest.",
+    "before": "Move your flat dominant hand backward over your dominant shoulder, palm facing backward.",
+    "later": "Form an 'L' shape with your dominant hand and tilt it forward at the wrist.",
+    "now": "Form 'Y' shapes with both hands (thumb and pinky extended) and drop them downward in front of you once.",
+    "thursday": "Form a 'T' shape with your hand and transition it into an 'H' shape while circling in the air.",
+    "thanksgiving": "Bring both hands (fingertips touching chin) forward and down in an arc, expressing gratitude."
+}

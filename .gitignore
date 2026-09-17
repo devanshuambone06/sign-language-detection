@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Large ML model files
+*.keras
+*.keras.zip
+*.h5
+
+# Dataset / Training data (too large)
+backend/dataset/
+backend/selected_dataset/
+backend/outputs/
+
+# Node
+node_modules/
+frontend/dist/
+frontend/.env
+
+# System
+.DS_Store
+Thumbs.db
+.idea/
