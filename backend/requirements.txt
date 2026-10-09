@@ -3,10 +3,10 @@
 # Requirements — Python 3.10+
 # ============================================
 
-# ── Core Streamlit & WebRTC ──────────────────
-streamlit>=1.35.0
-streamlit-webrtc>=0.47.0
-av>=12.0.0
+# ── Core (FastAPI handles UI + WebSockets) ──────────────────
+# streamlit>=1.35.0
+# streamlit-webrtc>=0.47.0
+# av>=12.0.0
 
 # ── Computer Vision & Landmarks ─────────────
 opencv-python-headless>=4.9.0.80
