@@ -493,14 +493,75 @@ def get_nlp_sentence(words, use_t5=False, t5_callback=None):
             
     return local_sentence
 
+# Single-word fallback tenses for shortcut words
+_SINGLE_WORD_TENSES = {
+    "yes":          {"present": "Yes.",              "past": "Yes, that was correct.",       "future": "Yes, it will be so."},
+    "no":           {"present": "No.",               "past": "No, that was not the case.",   "future": "No, it will not happen."},
+    "hello":        {"present": "Hello!",            "past": "I said hello.",                "future": "I will say hello."},
+    "fine":         {"present": "I am doing fine.",  "past": "I was doing fine.",            "future": "I will be fine."},
+    "wrong":        {"present": "Something is wrong.","past": "Something went wrong.",       "future": "Something will go wrong."},
+    "right":        {"present": "That is right.",    "past": "That was right.",              "future": "That will be right."},
+    "same":         {"present": "It is the same.",   "past": "It was the same.",             "future": "It will be the same."},
+    "finish":       {"present": "I have finished.",  "past": "I finished.",                  "future": "I will finish."},
+    "now":          {"present": "It is happening now.","past": "It happened just then.",     "future": "It will happen soon."},
+    "later":        {"present": "I will do it later.","past": "I did it later.",             "future": "I will do it later."},
+    "before":       {"present": "Before this.",      "past": "Before that happened.",        "future": "Before it happens."},
+    "how":          {"present": "How is it?",        "past": "How was it?",                  "future": "How will it be?"},
+    "what":         {"present": "What is it?",       "past": "What was it?",                 "future": "What will it be?"},
+    "who":          {"present": "Who is it?",        "past": "Who was it?",                  "future": "Who will it be?"},
+    "accident":     {"present": "There is an accident.", "past": "There was an accident.",   "future": "There will be an accident."},
+    "all":          {"present": "We are all here.",  "past": "We were all there.",           "future": "We will all be there."},
+    "many":         {"present": "There are many.",   "past": "There were many.",             "future": "There will be many."},
+    "language":     {"present": "I am learning sign language.", "past": "I learned sign language.", "future": "I will learn sign language."},
+    "deaf":         {"present": "The person is deaf.", "past": "The person was deaf.",       "future": "The person will be deaf."},
+    "hearing":      {"present": "I can hear.",       "past": "I could hear.",                "future": "I will be able to hear."},
+    "school":       {"present": "I am at school.",   "past": "I was at school.",             "future": "I will go to school."},
+    "work":         {"present": "I am working.",     "past": "I worked.",                    "future": "I will work."},
+    "time":         {"present": "What time is it?",  "past": "What time was it?",            "future": "What time will it be?"},
+    "year":         {"present": "This year.",        "past": "Last year.",                   "future": "Next year."},
+}
+
 def get_three_tenses(words):
     cleaned = _refiner.clean_sequence(words)
     if not cleaned:
         return {"present": "", "past": "", "future": ""}
-    
+
+    # Single word — use lookup table first
+    if len(cleaned) == 1:
+        w = cleaned[0]
+        if w in _SINGLE_WORD_TENSES:
+            return _SINGLE_WORD_TENSES[w]
+        # For nouns/objects, build simple sentences
+        if w in SUBJECTS:
+            subj = SUBJECTS[w]
+            return {
+                "present": f"{subj.capitalize()} is here.",
+                "past":    f"{subj.capitalize()} was here.",
+                "future":  f"{subj.capitalize()} will be here.",
+            }
+        if w in VERBS:
+            pv = PAST_VERBS.get(w, w + "ed")
+            return {
+                "present": f"I {w}.",
+                "past":    f"I {pv}.",
+                "future":  f"I will {w}.",
+            }
+        # Generic fallback for any single word
+        return {
+            "present": f"I see {w}.",
+            "past":    f"I saw {w}.",
+            "future":  f"I will see {w}.",
+        }
+
     elem = _refiner.parse_elements(cleaned)
-    return {
-        "present": _refiner.construct_tense(elem, "present"),
-        "past": _refiner.construct_tense(elem, "past"),
-        "future": _refiner.construct_tense(elem, "future")
-    }
+    present = _refiner.construct_tense(elem, "present")
+    past    = _refiner.construct_tense(elem, "past")
+    future  = _refiner.construct_tense(elem, "future")
+
+    # Fallback if construct_tense returns empty
+    raw = " ".join(cleaned)
+    if not present: present = f"I {raw}."
+    if not past:    past    = f"I {raw} before."
+    if not future:  future  = f"I will {raw}."
+
+    return {"present": present, "past": past, "future": future}

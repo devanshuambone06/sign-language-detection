@@ -6,15 +6,28 @@ import { usePrediction as usePredictionContext } from '../../context/PredictionC
 const SuggestionsCard = () => {
   const { currentPrediction } = usePredictionContext();
   
-  const suggestions = currentPrediction?.suggestions || [
-    { gesture: 'Hello', confidence: 98.5, rank: 1 },
-    { gesture: 'Thank You', confidence: 95.2, rank: 2 },
-    { gesture: 'Please', confidence: 89.4, rank: 3 },
-  ];
+  // Backend sends suggestions as [{word, confidence, tip}]
+  // Default placeholders shown before any sign is detected
+  const rawSuggestions = currentPrediction?.suggestions;
+  const suggestions = rawSuggestions?.length
+    ? rawSuggestions.map((s, i) => ({
+        gesture: s.word || s.gesture || 'Unknown',
+        confidence: parseFloat(((s.confidence > 1 ? s.confidence : s.confidence * 100)).toFixed(1)),
+        rank: i + 1,
+        tip: s.tip || '',
+      }))
+    : [
+        { gesture: 'hello', confidence: 0, rank: 1 },
+        { gesture: 'thank you', confidence: 0, rank: 2 },
+        { gesture: 'please', confidence: 0, rank: 3 },
+      ];
 
-  const confidence = currentPrediction?.confidence || 0;
+  const confidence = currentPrediction
+    ? parseFloat((currentPrediction.confidence > 1 ? currentPrediction.confidence : currentPrediction.confidence * 100).toFixed(1))
+    : 0;
 
-  const isLowConfidence = confidence < 90;
+  const isLowConfidence = !currentPrediction || confidence < 50;
+
   const confidenceBgClass = isLowConfidence ? 'bg-warning/10 border-warning/30' : 'bg-success/10 border-success/30';
   const confidenceTextClass = isLowConfidence ? 'text-warning' : 'text-success';
   const confidenceTitle = isLowConfidence ? 'Confidence Warning' : 'Good Confidence';

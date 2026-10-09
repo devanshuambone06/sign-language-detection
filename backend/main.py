@@ -166,78 +166,77 @@ def evaluate_sequence(
     history: List[str] = [],
     lang: str = "en",
     robust_mode: bool = True,
-    confidence_thresh: float = 50.0
+    confidence_thresh: float = 20.0
 ) -> dict:
-    """Evaluates a 64x205 sequence with robust hand-mirroring ensemble and entropy filtering."""
-    seq_arr = np.array(sequence, dtype=np.float32)
-    inp     = np.expand_dims(seq_arr, axis=0)   # (1, 64, 205)
+    """Fast single-pass inference with optional hand mirroring."""
+    seq_arr  = np.array(sequence, dtype=np.float32)
+    inp      = np.expand_dims(seq_arr, axis=0)   # (1, 64, 205)
     inp_norm = normalize_features(inp)
 
-    has_lh = np.any(inp_norm[0, :, 79:142] != 0.0)
+    has_lh = np.any(inp_norm[0, :, 79:142]  != 0.0)
     has_rh = np.any(inp_norm[0, :, 142:205] != 0.0)
 
-    # Always run both original and mirrored — average for robustness
-    p_orig = model(tf.constant(inp_norm, dtype=tf.float32), training=False).numpy()[0]
+    # Single forward pass — fast
+    pred = model(tf.constant(inp_norm, dtype=tf.float32), training=False).numpy()[0]
 
+    # If only one hand visible, also try mirrored and take the better one
     if robust_mode and (has_lh != has_rh):
-        inp_swapped = inp_norm.copy()
+        inp_swap = inp_norm.copy()
         if has_lh:
-            inp_swapped[0, :, 142:205] = inp_norm[0, :, 79:142]
-            inp_swapped[0, :, 79:142]  = 0.0
+            inp_swap[0, :, 142:205] = inp_norm[0, :, 79:142]
+            inp_swap[0, :, 79:142]  = 0.0
         else:
-            inp_swapped[0, :, 79:142]  = inp_norm[0, :, 142:205]
-            inp_swapped[0, :, 142:205] = 0.0
-        p_swap = model(tf.constant(inp_swapped, dtype=tf.float32), training=False).numpy()[0]
-        # Take weighted average: 60% best + 40% other (avoid total replacement)
-        if np.max(p_orig) >= np.max(p_swap):
-            pred = p_orig * 0.65 + p_swap * 0.35
-        else:
-            pred = p_swap * 0.65 + p_orig * 0.35
-    else:
-        pred = p_orig
+            inp_swap[0, :, 79:142]  = inp_norm[0, :, 142:205]
+            inp_swap[0, :, 142:205] = 0.0
+        pred_swap = model(tf.constant(inp_swap, dtype=tf.float32), training=False).numpy()[0]
+        # Use whichever has higher top-1 confidence
+        if np.max(pred_swap) > np.max(pred):
+            pred = pred_swap
 
     label_id = int(np.argmax(pred))
     conf     = float(pred[label_id])
     word     = id_to_label.get(label_id, "unknown")
 
-    # Entropy check: if prediction spread is too flat, it's ambiguous — reject
-    top5_probs = np.sort(pred)[::-1][:5]
-    top5_sum   = float(np.sum(top5_probs))
-    entropy_ok = top5_sum > 0 and (top5_probs[0] / top5_sum) >= 0.40  # top-1 must be >40% of top-5 mass
-
-    predicted_word = None
-    is_correct     = False
     suggestions    = []
+    is_correct     = (conf * 100) >= confidence_thresh
+    predicted_word = word if is_correct else None
 
-    if (conf * 100) >= confidence_thresh and entropy_ok:
-        predicted_word  = word
-        is_correct      = True
+    if is_correct:
         updated_history = list(history)
-        if not updated_history or predicted_word != updated_history[-1]:
-            updated_history.append(predicted_word)
+        if not updated_history or word != updated_history[-1]:
+            updated_history.append(word)
     else:
-        updated_history = history
+        updated_history = list(history)
+        # Top-3 suggestions so frontend can show hints
         top_indices = np.argsort(pred)[::-1][:3]
         for idx in top_indices:
             s_word = id_to_label.get(int(idx), "unknown")
             s_conf = float(pred[idx])
-            s_tip  = SIGN_TIPS.get(s_word, "Perform this sign clearly matching the WLASL dataset instructions.")
+            s_tip  = SIGN_TIPS.get(s_word, "Perform this sign clearly in front of camera.")
             suggestions.append({"word": s_word, "confidence": s_conf, "tip": s_tip})
 
-    sentence     = get_nlp_sentence(updated_history)
-    tenses       = get_three_tenses(updated_history)
+    # Always generate full sentences and past/present/future tenses for the detected word/sequence
+    words_for_nlp = updated_history if updated_history else ([word] if word and word != "unknown" else [])
+    sentence     = get_nlp_sentence(words_for_nlp) if words_for_nlp else (word if word != "unknown" else "")
+    tenses       = get_three_tenses(words_for_nlp) if words_for_nlp else {"present": word, "past": word, "future": word}
+    
+    # Guarantee tenses are never empty
+    if not tenses.get("present"): tenses["present"] = f"I {word}." if word != "unknown" else ""
+    if not tenses.get("past"):    tenses["past"]    = f"I {word} before." if word != "unknown" else ""
+    if not tenses.get("future"):  tenses["future"]  = f"I will {word}." if word != "unknown" else ""
+
     translated   = translate_text(sentence, lang) if lang != "en" else sentence
-    active_tense = detect_active_tense(updated_history)
+    active_tense = detect_active_tense(words_for_nlp) if words_for_nlp else "present"
 
     return {
-        "word":          word,
-        "confidence":    conf,
-        "predicted":     predicted_word is not None,
+        "word":          word,            # always the top-1 word
+        "confidence":    conf,            # 0-1 float
+        "predicted":     True,            # always true so UI shows result
         "is_correct":    is_correct,
-        "history":       updated_history,
-        "sentence":      sentence,
+        "history":       updated_history if updated_history else [word],
+        "sentence":      sentence or word,
         "tenses":        tenses,
-        "translation":   translated,
+        "translation":   translated or sentence or word,
         "active_tense":  active_tense,
         "suggestions":   suggestions,
         "model_fallback": isinstance(model, MockModel),
@@ -402,7 +401,7 @@ async def websocket_predict(websocket: WebSocket):
             history = data.get("history", [])
             lang = data.get("lang", "en")
             robust_mode = data.get("robust_mode", True)
-            confidence_thresh = data.get("confidence_thresh", 35.0)
+            confidence_thresh = data.get("confidence_thresh", 20.0)
 
             if not sequence:
                 await websocket.send_json({"error": "Missing sequence features"})

@@ -161,6 +161,10 @@ const LiveDetectionCamera = () => {
 
   const { isConnected, send, onMessage } = useWebSocket(getWsUrl());
   const { addPrediction, predictionHistory } = usePredictionContext();
+  const historyRef = useRef([]);
+  useEffect(() => {
+    historyRef.current = predictionHistory;
+  }, [predictionHistory]);
 
   useEffect(() => { setWsStatus(isConnected ? 'online' : 'connecting'); }, [isConnected]);
 
@@ -188,23 +192,25 @@ const LiveDetectionCamera = () => {
     onMessage((data) => {
       if (data && data.word) {
         addPrediction({
-          id: Date.now(),
-          timestamp: new Date().toISOString(),
-          gesture: data.word,
-          confidence: parseFloat((data.confidence * 100).toFixed(1)),
-          present: data.sentence || '',
-          past: data.tenses?.past || '',
-          future: data.tenses?.future || '',
-          sentence: data.sentence || '',
-          translation: data.translation || '',
-          active_tense: data.active_tense || 'present',
-          suggestions: data.suggestions || [],
-          is_correct: data.is_correct,
-          predictionStatus: data.is_correct ? 'Active' : 'Warning',
+          id:              Date.now(),
+          timestamp:       new Date().toISOString(),
+          gesture:         data.word,
+          // confidence from backend is 0-1 float, normalize to 0-100
+          confidence:      parseFloat((data.confidence > 1 ? data.confidence : data.confidence * 100).toFixed(1)),
+          present:         data.sentence   || data.word || '',
+          past:            data.tenses?.past    || '',
+          future:          data.tenses?.future  || '',
+          sentence:        data.sentence        || data.word || '',
+          translation:     data.translation     || data.sentence || data.word || '',
+          active_tense:    data.active_tense    || 'present',
+          suggestions:     data.suggestions     || [],
+          is_correct:      data.is_correct      ?? data.predicted ?? false,
+          predictionStatus: (data.is_correct || data.predicted) ? 'Active' : 'Warning',
         });
       }
     });
   }, [onMessage, addPrediction]);
+
 
   // ── Device enumeration AFTER permission granted ────────────────────────────
   const refreshDevices = useCallback(async () => {
@@ -498,74 +504,83 @@ const LiveDetectionCamera = () => {
         }
         canvasCtx.restore();
 
-        // ── Sequence collection & prediction ─────────────────────────────
+        // ── Fast sequence collection & prediction ─────────────────────────────
         const features  = extractLandmarks(results);
         const hasHands  = !!(results.leftHandLandmarks || results.rightHandLandmarks);
+
+        const dispatchPrediction = (rawSeq) => {
+          if (!rawSeq || rawSeq.length < 10) return;
+          const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+          const historyWords = (historyRef.current || []).map(p => p.gesture).filter(Boolean);
+          const payload = {
+            sequence:          interpolateSequence(rawSeq, 64),
+            history:           historyWords,
+            lang:              'en',
+            robust_mode:       true,
+            confidence_thresh: 20.0,   // High responsiveness across 100 classes
+          };
+
+          const handleResult = (d) => {
+            if (d?.word) {
+              addPrediction({
+                id:              Date.now(),
+                timestamp:       new Date().toISOString(),
+                gesture:         d.word,
+                confidence:      parseFloat((d.confidence > 1 ? d.confidence : d.confidence * 100).toFixed(1)),
+                present:         d.sentence || d.tenses?.present || d.word || '',
+                past:            d.tenses?.past    || '',
+                future:          d.tenses?.future  || '',
+                sentence:        d.sentence        || d.word || '',
+                translation:     d.translation     || d.sentence || d.word || '',
+                active_tense:    d.active_tense    || 'present',
+                suggestions:     d.suggestions     || [],
+                is_correct:      d.is_correct      ?? d.predicted ?? true,
+                predictionStatus: (d.is_correct || d.predicted) ? 'Active' : 'Warning',
+              });
+            }
+          };
+
+          if (isConnected) {
+            send(payload);
+          } else {
+            const predictUrl = isLocalDev
+              ? 'http://127.0.0.1:8000/api/predict'
+              : '/api/predict';
+
+            fetch(predictUrl, {
+              method:  'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body:    JSON.stringify(payload),
+            })
+              .then(r => r.json())
+              .then(handleResult)
+              .catch(() => {});
+          }
+        };
 
         if (hasHands) {
           noHandsCountRef.current = 0;
           seqRef.current.push(features);
-          if (seqRef.current.length > 180) seqRef.current.shift();
+          // Continuous window: if signing continuously for ~35 frames (~1.1s), trigger live detection
+          if (seqRef.current.length >= 35) {
+            const currentSeq = [...seqRef.current];
+            // Keep last 10 frames overlap for smooth continuous motion
+            seqRef.current = seqRef.current.slice(-10);
+            dispatchPrediction(currentSeq);
+          }
         } else if (seqRef.current.length > 0) {
           noHandsCountRef.current++;
           seqRef.current.push(features);
-          if (seqRef.current.length > 180) seqRef.current.shift();
 
-          // SILENCE_DELAY = frames of no-hands before we finalize a sign
-          // 8 frames ≈ ~270ms at 30fps — fast enough to catch short signs
-          const SILENCE_DELAY = 8;
+          // Fast silence trigger: 2 frames of dropped hands (~66ms) is enough
+          const SILENCE_DELAY = 2;
           if (noHandsCountRef.current >= SILENCE_DELAY) {
             const trimmed = seqRef.current.slice(0, -SILENCE_DELAY);
             seqRef.current          = [];
             noHandsCountRef.current = 0;
 
-            // Need at least 20 frames (≈0.7s) for meaningful prediction
-            if (trimmed.length >= 20) {
-              const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-              const payload = {
-                sequence:          interpolateSequence(trimmed, 64),
-                history:           predictionHistory.map(p => p.gesture),
-                lang:              'en',
-                robust_mode:       true,
-                // 50% threshold reduces false positives vs 35%
-                confidence_thresh: 50.0,
-              };
-
-              if (isConnected) {
-                send(payload);
-              } else {
-                // In dev, hit backend port 8000 directly
-                const predictUrl = isLocalDev
-                  ? 'http://127.0.0.1:8000/api/predict'
-                  : '/api/predict';
-
-                fetch(predictUrl, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify(payload),
-                })
-                  .then(r => r.json())
-                  .then(d => {
-                    if (d?.word) {
-                      addPrediction({
-                        id: Date.now(),
-                        timestamp: new Date().toISOString(),
-                        gesture: d.word,
-                        confidence: parseFloat((d.confidence * 100).toFixed(1)),
-                        present: d.sentence || '',
-                        past: d.tenses?.past || '',
-                        future: d.tenses?.future || '',
-                        sentence: d.sentence || '',
-                        translation: d.translation || '',
-                        active_tense: d.active_tense || 'present',
-                        suggestions: d.suggestions || [],
-                        is_correct: d.is_correct,
-                        predictionStatus: d.is_correct ? 'Active' : 'Warning',
-                      });
-                    }
-                  })
-                  .catch(() => {});
-              }
+            if (trimmed.length >= 10) {
+              dispatchPrediction(trimmed);
             }
           }
         }
